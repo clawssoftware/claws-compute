@@ -8,12 +8,14 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test dist/**/*.test.js",
-    "lint": "echo ok"
+    "lint": "echo ok",
+    "deploy:test": "tsx src/deploy-cli.ts"
   },
   "dependencies": {
     "@claws/shared": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "22.10.5",
     "typescript": "5.9.3"
   }
 }
