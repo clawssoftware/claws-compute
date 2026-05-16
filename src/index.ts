@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import type { ProviderRef } from '@claws/shared';
+import type { ProviderRef } from '@clawssoftware/shared';
 
 // ── Instance size catalogue ──────────────────────────────────────────────────
 

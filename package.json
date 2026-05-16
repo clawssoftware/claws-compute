@@ -1,9 +1,23 @@
 {
-  "name": "@claws/compute",
+  "name": "@clawssoftware/compute",
   "version": "0.1.0",
+  "description": "Akash SDL + deploy helpers for claws.software compute cells.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clawssoftware/claws-compute.git"
+  },
+  "homepage": "https://github.com/clawssoftware/claws-compute",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -12,7 +26,7 @@
     "deploy:test": "tsx src/deploy-cli.ts"
   },
   "dependencies": {
-    "@claws/shared": "workspace:*"
+    "@clawssoftware/shared": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "22.10.5",
