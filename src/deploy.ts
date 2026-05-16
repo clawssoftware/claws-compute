@@ -55,6 +55,35 @@ const BASE_TX_FLAGS = [
   '--output', 'json',
 ];
 
+/** Comma- or whitespace-separated `akash1…` provider addresses to exclude from bid selection. */
+function blockedProviderAddresses(): Set<string> {
+  const raw = process.env.AKASH_PROVIDER_BLOCKLIST?.trim() ?? '';
+  if (!raw) return new Set();
+  return new Set(raw.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean));
+}
+
+/** After `send-manifest`, wait for forwarded ports via `provider-services lease-status`. Default 14m. */
+function providerReadyDeadlineMs(): number {
+  const n = Number(process.env.AKASH_PROVIDER_READY_TIMEOUT_MS?.trim());
+  return Number.isFinite(n) && n >= 60_000 ? n : 14 * 60_000;
+}
+
+function providerReadyPollMs(): number {
+  const n = Number(process.env.AKASH_PROVIDER_READY_POLL_MS?.trim());
+  return Number.isFinite(n) && n >= 2_000 ? n : 5_000;
+}
+
+/** Consecutive "lease not found" / HTTP 404 from provider lease-status ⇒ abort early. Default 8. */
+function ghostLeaseAbortAfter(): number {
+  const n = Number(process.env.AKASH_PROVIDER_GHOST_LEASE_THRESHOLD?.trim());
+  return Number.isFinite(n) && n >= 3 ? n : 8;
+}
+
+function bidEntryProvider(entry: any): string {
+  const id = entry?.bid?.id ?? entry?.bid ?? entry;
+  return String(id?.provider ?? '').trim();
+}
+
 export interface DeployResult {
   cell_name: string;
   dseq: number;
@@ -205,7 +234,8 @@ export async function closeDeployment(dseq: number): Promise<void> {
   }
 }
 
-async function waitForBids(dseq: number, maxWaitMs = 120_000): Promise<any> {
+async function waitForBids(dseq: number, maxWaitMs = 120_000): Promise<any[]> {
+  const blocked = blockedProviderAddresses();
   const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {
     try {
@@ -219,22 +249,65 @@ async function waitForBids(dseq: number, maxWaitMs = 120_000): Promise<any> {
       ]);
       const data = JSON.parse(raw);
       const bids: any[] = data.bids ?? [];
-      if (bids.length > 0) return bids;
+      if (bids.length > 0) {
+        const eligible = bids.filter((b) => !blocked.has(bidEntryProvider(b)));
+        if (blocked.size === 0 || eligible.length > 0) return bids;
+        /* bids exist but all are blocklisted — keep polling until new providers bid */
+      }
     } catch {
       // no bids yet or query error — keep polling
     }
     await sleep(6_000); // 1 block ≈ 6s
   }
+
+  try {
+    const tailRaw = await akash([
+      'query', 'market', 'bid', 'list',
+      '--owner', OWNER,
+      '--dseq', String(dseq),
+      '--state', 'open',
+      '--node', NODE_RPC,
+      '--output', 'json',
+    ]);
+    const tailData = JSON.parse(tailRaw);
+    const tailBids: any[] = tailData.bids ?? [];
+    if (
+      tailBids.length > 0 &&
+      blocked.size > 0 &&
+      tailBids.every((b) => blocked.has(bidEntryProvider(b)))
+    ) {
+      throw new Error(
+        `${tailBids.length} bid(s) on dseq ${dseq} are AKASH_PROVIDER_BLOCKLIST-only`,
+      );
+    }
+  } catch (e: unknown) {
+    if (
+      e instanceof Error &&
+      e.message.includes('AKASH_PROVIDER_BLOCKLIST-only')
+    ) {
+      throw e;
+    }
+  }
   throw new Error(`No bids appeared within ${maxWaitMs / 1000}s for dseq ${dseq}`);
 }
 
 function pickBid(bids: any[]): { provider: string; gseq: number; oseq: number } {
-  // Each entry: { bid: { id: { provider, dseq, gseq, oseq }, price: { amount, denom } } }
-  const sorted = bids.slice().sort((a, b) => {
+  const blocked = blockedProviderAddresses();
+  const eligible = bids.filter((b) => !blocked.has(bidEntryProvider(b)));
+  const sorted = eligible.sort((a, b) => {
     const pa = Number(a.bid?.price?.amount ?? 99999999);
     const pb = Number(b.bid?.price?.amount ?? 99999999);
     return pa - pb;
   });
+  if (sorted.length === 0) {
+    const preview = bids
+      .slice(0, 5)
+      .map((x) => bidEntryProvider(x))
+      .join(', ');
+    throw new Error(
+      `All ${bids.length} Akash bid(s) are in AKASH_PROVIDER_BLOCKLIST (sample: ${preview})`,
+    );
+  }
   const best = sorted[0];
   const id = best.bid?.id ?? best.bid ?? best;
   return {
@@ -242,6 +315,55 @@ function pickBid(bids: any[]): { provider: string; gseq: number; oseq: number } 
     gseq: Number(id.gseq ?? 1),
     oseq: Number(id.oseq ?? 1),
   };
+}
+
+/**
+ * After manifest is accepted, poll `lease-status` until forwarded ports appear, or bail out when
+ * the provider keeps returning ghost "lease not found" / 404 responses.
+ */
+async function waitForForwardedPortsAfterManifest(
+  cellName: string,
+  dseq: number,
+  provider: string,
+): Promise<void> {
+  const deadlineAt = Date.now() + providerReadyDeadlineMs();
+  const pollMs = providerReadyPollMs();
+  const ghostAbort = ghostLeaseAbortAfter();
+  let consecutiveGhost = 0;
+
+  console.log(
+    `[deploy] Waiting for provider workload (${provider}) dseq=${dseq} cell=${cellName} (${providerReadyDeadlineMs()}ms deadline)`,
+  );
+
+  while (Date.now() < deadlineAt) {
+    try {
+      const eps = await leaseEndpoints(dseq, provider);
+      if (Object.keys(eps).length > 0) {
+        console.log(`[deploy] Forwarded ports ready: ${Object.keys(eps).join(',')}`);
+        return;
+      }
+      consecutiveGhost = 0;
+    } catch (err: any) {
+      const msg = String(err.message);
+      const ghost = /lease not found|404|remote server returned 404/i.test(msg);
+      if (ghost) {
+        consecutiveGhost += 1;
+        console.warn(`[deploy] Ghost lease-status (${consecutiveGhost}/${ghostAbort}) ${msg.slice(0, 260)}`);
+        if (consecutiveGhost >= ghostAbort) {
+          await closeDeployment(dseq);
+          throw new Error(
+            `Provider ${provider} never materialized workload for ${cellName} dseq=${dseq}`,
+          );
+        }
+      } else {
+        consecutiveGhost = 0;
+      }
+    }
+    await sleep(pollMs);
+  }
+
+  await closeDeployment(dseq);
+  throw new Error(`Timeout (${providerReadyDeadlineMs()}ms) for forwarded_ports ${cellName} dseq=${dseq}`);
 }
 
 export async function deployCell(params: CellSDLParams): Promise<DeployResult> {
@@ -385,6 +507,9 @@ async function _deploy(cellName: string, sdlYaml: string): Promise<DeployResult>
     } catch (err: any) {
       console.warn(`[deploy] Manifest send failed (non-fatal, lease exists): ${err.message}`);
     }
+
+    // Step 5: Ensure provider exposes workload ports (closes + throws on ghost leases / timeouts)
+    await waitForForwardedPortsAfterManifest(cellName, dseq, provider);
 
     return { cell_name: cellName, dseq, gseq, oseq, provider, tx_hash: txHash, lease_tx_hash: leaseTxHash, manifest_sent: manifestSent };
   } finally {

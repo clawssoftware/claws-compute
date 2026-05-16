@@ -46,9 +46,16 @@ There is **no long-running server** in this package; consumers import functions 
 - `AKASH_NODE` — Tendermint RPC URL (code defaults to a public RPC host if unset; override for your network).
 - `AKASH_EXECUTION_MODE` — must be `provider-services-cli` for readiness to report full live path.
 
+**Orchestration (deploy.ts)**
+
+- `AKASH_PROVIDER_BLOCKLIST` — comma- or whitespace-separated provider `akash1…` addresses to skip when choosing the lowest-price bid (avoids incapable “ghost lease” hosts without manual UI filtering).
+- `AKASH_PROVIDER_READY_TIMEOUT_MS` — after `send-manifest`, how long to poll `provider-services lease-status` for forwarded ports before closing deployment (floor 60 000; default ~14 min).
+- `AKASH_PROVIDER_READY_POLL_MS` — poll interval during that wait (floor 2000 ms).
+- `AKASH_PROVIDER_GHOST_LEASE_THRESHOLD` — consecutive `lease not found` / HTTP 404 responses before closing as a ghost workload (minimum 3, default 8).
+
 **Images**
 
-- `CELL_IMAGE` — overrides default cell container image (`ghcr.io/clawssoftware/claws-cell:latest` when unset).
+- `CELL_IMAGE` — overrides default cell container image (`ghcr.io/clawssoftware/claws-cell:latest` when unset; must match the public `clawssoftware/claws-cell` GHCR push).
 
 **Process**
 
