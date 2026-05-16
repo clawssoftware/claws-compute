@@ -1,6 +1,6 @@
 {
   "name": "@clawssoftware/compute",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Akash SDL + deploy helpers for claws.software compute cells.",
   "type": "module",
   "main": "dist/index.js",

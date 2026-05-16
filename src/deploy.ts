@@ -195,7 +195,10 @@ function sleep(ms: number): Promise<void> {
 
 export async function closeDeployment(dseq: number): Promise<void> {
   try {
-    await akash(['tx', 'deployment', 'close', '--dseq', String(dseq), ...BASE_TX_FLAGS], 30_000);
+    await akash(
+      ['tx', 'deployment', 'close', '--dseq', String(dseq), '--note', `claws.software:close dseq=${dseq}`, ...BASE_TX_FLAGS],
+      30_000,
+    );
     console.log(`[deploy] Closed orphaned deployment dseq=${dseq}`);
   } catch (err: any) {
     console.warn(`[deploy] Failed to close orphaned deployment dseq=${dseq}: ${err.message}`);
@@ -256,12 +259,17 @@ async function _deploy(cellName: string, sdlYaml: string): Promise<DeployResult>
   const sdlPath = join(tmpdir(), `akash-sdl-${cellName}-${Date.now()}.yaml`);
   writeFileSync(sdlPath, sdlYaml, 'utf8');
 
+  // Cosmos tx memo. Akash Console + cloudmos.io render this as the deployment "name"
+  // in their UIs; without it both display "Unknown". Max 256 chars; we use far less.
+  const deploymentNote = `claws.software:${cellName}`;
+
   try {
     // Step 1: Create deployment
     console.log(`[deploy] Creating deployment for ${cellName}...`);
     const createRaw = await akash([
       'tx', 'deployment', 'create', sdlPath,
       '--deposit', DEPOSIT,
+      '--note', deploymentNote,
       ...BASE_TX_FLAGS,
     ], 60_000);
 
@@ -339,6 +347,7 @@ async function _deploy(cellName: string, sdlYaml: string): Promise<DeployResult>
       '--gseq', String(gseq),
       '--oseq', String(oseq),
       '--provider', provider,
+      '--note', deploymentNote,
       ...BASE_TX_FLAGS,
     ], 60_000);
 
