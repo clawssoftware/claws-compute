@@ -2,7 +2,7 @@
 
 type CellTier = 'large' | 'medium' | 'small';
 
-/** Default cell image (k3s + cell-agent); override via `CELL_IMAGE` env or SDL `image` param. */
+/** Default cell image (k3s + cell-agent); override via `CELL_IMAGE` env or SDL `image` param. Must match GHCR publish target in `clawssoftware/claws-cell` (see its `.github/workflows/cell-image.yml`). */
 export const CELL_IMAGE_DEFAULT =
   process.env.CELL_IMAGE?.trim() || 'ghcr.io/clawssoftware/claws-cell:latest';
 

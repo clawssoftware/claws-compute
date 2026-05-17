@@ -189,8 +189,26 @@ export {
   closeDeployment,
   leaseEndpoints,
   akashLeaseState,
+  walletBalances,
+  bmeVaultState,
+  mintActFromAkt,
+  ensureActBalance,
+  topUpDeployment,
+  deploymentEscrow,
+  leasePrice,
+  setOnProviderBlocked,
+  loadPersistedBlocklist,
+  InsufficientFundsError,
 } from './deploy.js';
-export type { DeployResult, LeaseEndpoint, DatabaseDeployResult } from './deploy.js';
+export type {
+  DeployResult,
+  LeaseEndpoint,
+  DatabaseDeployResult,
+  WalletBalances,
+  BmeVaultState,
+  MintResult,
+  DeploymentEscrow,
+} from './deploy.js';
 export { generateCellSDL, generateTestCellSDL, CELL_IMAGE_DEFAULT } from './sdl.js';
 export type { CellSDLParams } from './sdl.js';
 export type { DbSize } from './pgsdl.js';
