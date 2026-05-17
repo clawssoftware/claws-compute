@@ -531,6 +531,10 @@ export async function topUpDeployment(dseq: number, amountUact: number, note?: s
       `${Math.floor(amountUact)}uact`,
       '--dseq', String(dseq),
       '--owner', OWNER,
+      // Skip the grant module lookup (default `grant,balance`) — grants aren't
+      // configured and the CLI errors with a misleading "insufficient balance"
+      // before falling back to the actual wallet balance.
+      '--deposit-sources', 'balance',
       '--note', note ?? `claws.software:topup dseq=${dseq}`,
       ...BASE_TX_FLAGS,
     ],
