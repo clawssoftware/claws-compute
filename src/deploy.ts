@@ -488,20 +488,31 @@ export async function ensureActBalance(targetUact: number, opts?: { safetyMargin
   }
 
   const safety = 1 + (opts?.safetyMargin ?? 0.05);
-  const uaktNeeded = Math.ceil((deficit / Math.max(rate, 1e-9)) * safety);
+  const uaktForFullTarget = Math.ceil((deficit / Math.max(rate, 1e-9)) * safety);
 
   const reserve = minAktReserveUakt();
   const gas = txGasBudgetUakt();
   const aktAvailable = Math.max(0, balances.uakt - reserve - gas);
-  if (uaktNeeded > aktAvailable) {
+
+  // Mint as much as we can afford up to the full target. If even the chain
+  // min_mint floor can't be funded, refuse — but never fail-closed when a
+  // partial mint would still help.
+  const uaktToBurn = Math.min(uaktForFullTarget, aktAvailable);
+  const minProjectedAct = uaktToBurn * rate;
+  if (uaktToBurn <= 0 || minProjectedAct < floor) {
     console.error(
-      `[deploy] ensureActBalance: cannot mint ${deficit}uact — need ~${uaktNeeded}uakt, only ${aktAvailable}uakt available after reserve+gas (uakt=${balances.uakt}, reserve=${reserve}, gas=${gas})`,
+      `[deploy] ensureActBalance: insufficient AKT to cover even the min_mint floor — need ≥ ${Math.ceil(floor / rate)}uakt to mint ${floor}uact, only ${aktAvailable}uakt available after reserve+gas (uakt=${balances.uakt}, reserve=${reserve}, gas=${gas})`,
     );
     return balances;
   }
+  if (uaktToBurn < uaktForFullTarget) {
+    console.warn(
+      `[deploy] ensureActBalance: partial mint — ${uaktToBurn}uakt available (would need ${uaktForFullTarget}uakt for full target ${targetUact}uact). Will reach ~${Math.floor(balances.uact + minProjectedAct)}uact.`,
+    );
+  }
 
-  console.log(`[deploy] ensureActBalance: ACT ${balances.uact} < target ${targetUact} — burning ${uaktNeeded}uakt for ~${deficit}uact at rate ${rate.toFixed(6)}`);
-  const minted = await mintActFromAkt(uaktNeeded, { note: `claws.software:ensure-act target=${targetUact}` });
+  console.log(`[deploy] ensureActBalance: ACT ${balances.uact} < target ${targetUact} — burning ${uaktToBurn}uakt for ~${Math.floor(uaktToBurn * rate)}uact at rate ${rate.toFixed(6)}`);
+  const minted = await mintActFromAkt(uaktToBurn, { note: `claws.software:ensure-act target=${targetUact}` });
   const after = await walletBalances();
   return { ...after, minted };
 }
