@@ -521,12 +521,16 @@ export async function topUpDeployment(dseq: number, amountUact: number, note?: s
   if (!Number.isFinite(amountUact) || amountUact <= 0) {
     throw new Error(`topUpDeployment: invalid amount=${amountUact}`);
   }
+  // Correct Akash v2 syntax: `akash tx escrow deposit deployment <amount> --dseq N`
+  // (NOT `tx deployment deposit` — that subcommand doesn't exist.)
   const { parsed } = await akashTxJsonExpectOk(
-    'deployment deposit',
+    'escrow deposit deployment',
     [
-      'tx', 'deployment', 'deposit',
+      'tx', 'escrow', 'deposit',
+      'deployment',
       `${Math.floor(amountUact)}uact`,
       '--dseq', String(dseq),
+      '--owner', OWNER,
       '--note', note ?? `claws.software:topup dseq=${dseq}`,
       ...BASE_TX_FLAGS,
     ],
@@ -534,7 +538,7 @@ export async function topUpDeployment(dseq: number, amountUact: number, note?: s
   );
   const code = parsed.code;
   if (code !== 0 && code !== undefined) {
-    throw new Error(`deployment deposit tx failed code=${String(code)}: ${String((parsed as any).raw_log ?? '').slice(0, 400)}`);
+    throw new Error(`escrow deposit tx failed code=${String(code)}: ${String((parsed as any).raw_log ?? '').slice(0, 400)}`);
   }
   return String((parsed as any).txhash ?? '');
 }
